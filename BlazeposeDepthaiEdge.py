@@ -136,8 +136,10 @@ class BlazeposeDepthai:
 
             else:
                 width, self.scale_nd = mpu.find_isp_scale_params(internal_frame_height * 1920 / 1080, is_height=False)
-                self.img_h = int(round(1080 * self.scale_nd[0] / self.scale_nd[1]))
-                self.img_w = int(round(1920 * self.scale_nd[0] / self.scale_nd[1]))
+                # self.img_h = int(round(1080 * self.scale_nd[0] / self.scale_nd[1]))
+                # self.img_w = int(round(1920 * self.scale_nd[0] / self.scale_nd[1]))
+                self.img_h = 400
+                self.img_w = 640
                 self.pad_h = (self.img_w - self.img_h) // 2
                 self.pad_w = 0
                 self.frame_size = self.img_w
@@ -203,29 +205,61 @@ class BlazeposeDepthai:
         self.pd_input_length = 224
         self.lm_input_length = 256
 
+        # # ColorCamera
+        # print("Creating Color Camera...")
+        # cam = pipeline.create(dai.node.ColorCamera)
+        # cam.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
+        # cam.setInterleaved(False)
+        # cam.setIspScale(self.scale_nd[0], self.scale_nd[1])
+        # cam.setFps(self.internal_fps)
+        # cam.setBoardSocket(dai.CameraBoardSocket.RGB)
+        #
+        # if self.crop:
+        #     cam.setVideoSize(self.frame_size, self.frame_size)
+        #     cam.setPreviewSize(self.frame_size, self.frame_size)
+        # else:
+        #     cam.setVideoSize(self.img_w, self.img_h)
+        #     cam.setPreviewSize(self.img_w, self.img_h)
+        #
+        # if not self.laconic:
+        #     cam_out = pipeline.create(dai.node.XLinkOut)
+        #     cam_out.setStreamName("cam_out")
+        #     cam_out.input.setQueueSize(1)
+        #     cam_out.input.setBlocking(False)
+        #     cam.video.link(cam_out.input)
+        #############################################################################################
         # ColorCamera
-        print("Creating Color Camera...")
-        cam = pipeline.create(dai.node.ColorCamera) 
-        cam.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
-        cam.setInterleaved(False)
-        cam.setIspScale(self.scale_nd[0], self.scale_nd[1])
-        cam.setFps(self.internal_fps)
-        cam.setBoardSocket(dai.CameraBoardSocket.RGB)
+        print("Creating Color Camera UVC...")
+        cam_rgb = pipeline.createColorCamera()
+        cam_rgb.setBoardSocket(dai.CameraBoardSocket.RGB)
+        cam_rgb.setInterleaved(False)
+        cam_rgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
 
-        if self.crop:
-            cam.setVideoSize(self.frame_size, self.frame_size)
-            cam.setPreviewSize(self.frame_size, self.frame_size)
-        else: 
-            cam.setVideoSize(self.img_w, self.img_h)
-            cam.setPreviewSize(self.img_w, self.img_h)
+        # Create an UVC (USB Video Class) output node. It needs 1920x1080, NV12 input
+        uvc = pipeline.createUVC()
+        cam_rgb.video.link(uvc.input)
+
+        # MonoCamera
+        print("Creating Mono Camera...")
+        cam_left = pipeline.createMonoCamera()
+        cam_left.setBoardSocket(dai.CameraBoardSocket.LEFT)
+        cam_left.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
+        cam_left.setFps(self.internal_fps)
+
+        # Define mono camera Gray2BGR
+        print("Creating Gray2BGR Camera...")
+        mono_manip = pipeline.createImageManip()
+        # mono_manip.initialConfig.setResize(300, 300)
+        mono_manip.initialConfig.setFrameType(dai.RawImgFrame.Type.BGR888p)
+
+        cam_left.out.link(mono_manip.inputImage)
 
         if not self.laconic:
             cam_out = pipeline.create(dai.node.XLinkOut)
             cam_out.setStreamName("cam_out")
             cam_out.input.setQueueSize(1)
             cam_out.input.setBlocking(False)
-            cam.video.link(cam_out.input)
-
+            mono_manip.out.link(cam_out.input)
 
         # Define manager script node
         manager_script = pipeline.create(dai.node.Script)
@@ -238,9 +272,9 @@ class BlazeposeDepthai:
             calib_data = self.device.readCalibration()
             calib_lens_pos = calib_data.getLensPosition(dai.CameraBoardSocket.RGB)
             print(f"RGB calibration lens position: {calib_lens_pos}")
-            cam.initialControl.setManualFocus(calib_lens_pos)
+            # cam.initialControl.setManualFocus(calib_lens_pos)
 
-            mono_resolution = dai.MonoCameraProperties.SensorResolution.THE_400_P
+            mono_resolution = dai.MonoCameraProperties.SensorResolution.THE_720_P
             left = pipeline.createMonoCamera()
             left.setBoardSocket(dai.CameraBoardSocket.LEFT)
             left.setResolution(mono_resolution)
@@ -257,7 +291,7 @@ class BlazeposeDepthai:
             stereo.setLeftRightCheck(True)
             stereo.setDepthAlign(dai.CameraBoardSocket.RGB)
             stereo.setSubpixel(False)  # subpixel True -> latency
-            # MEDIAN_OFF necessary in depthai 2.7.2. 
+            # MEDIAN_OFF necessary in depthai 2.7.2.
             # Otherwise : [critical] Fatal error. Please report to developers. Log: 'StereoSipp' '533'
             # stereo.setMedianFilter(dai.StereoDepthProperties.MedianFilter.MEDIAN_OFF)
 
@@ -267,7 +301,7 @@ class BlazeposeDepthai:
             spatial_location_calculator.inputDepth.setQueueSize(1)
 
             left.out.link(stereo.left)
-            right.out.link(stereo.right)    
+            right.out.link(stereo.right)
 
             stereo.depth.link(spatial_location_calculator.inputDepth)
 
@@ -277,11 +311,12 @@ class BlazeposeDepthai:
         # Define pose detection pre processing (resize preview to (self.pd_input_length, self.pd_input_length))
         print("Creating Pose Detection pre processing image manip...")
         pre_pd_manip = pipeline.create(dai.node.ImageManip)
-        pre_pd_manip.setMaxOutputFrameSize(self.pd_input_length*self.pd_input_length*3)
+        pre_pd_manip.setMaxOutputFrameSize(self.pd_input_length * self.pd_input_length * 3)
         pre_pd_manip.setWaitForConfigInput(True)
         pre_pd_manip.inputImage.setQueueSize(1)
         pre_pd_manip.inputImage.setBlocking(False)
-        cam.preview.link(pre_pd_manip.inputImage)
+        # cam.preview.link(pre_pd_manip.inputImage)
+        mono_manip.out.link(pre_pd_manip.inputImage)
         manager_script.outputs['pre_pd_manip_cfg'].link(pre_pd_manip.inputConfig)
 
         # For debugging
@@ -296,7 +331,7 @@ class BlazeposeDepthai:
         # Increase threads for detection
         # pd_nn.setNumInferenceThreads(2)
         pre_pd_manip.out.link(pd_nn.input)
-       
+
         # Define pose detection post processing "model"
         print("Creating Pose Detection post processing Neural Network...")
         post_pd_nn = pipeline.create(dai.node.NeuralNetwork)
@@ -304,46 +339,47 @@ class BlazeposeDepthai:
         pd_nn.out.link(post_pd_nn.input)
         post_pd_nn.out.link(manager_script.inputs['from_post_pd_nn'])
 
-        # Define link to send result to host 
+        # Define link to send result to host
         manager_out = pipeline.create(dai.node.XLinkOut)
         manager_out.setStreamName("manager_out")
         manager_script.outputs['host'].link(manager_out.input)
 
         # Define landmark pre processing image manip
-        print("Creating Landmark pre processing image manip...") 
+        print("Creating Landmark pre processing image manip...")
         pre_lm_manip = pipeline.create(dai.node.ImageManip)
-        pre_lm_manip.setMaxOutputFrameSize(self.lm_input_length*self.lm_input_length*3)
+        pre_lm_manip.setMaxOutputFrameSize(self.lm_input_length * self.lm_input_length * 3)
         pre_lm_manip.setWaitForConfigInput(True)
         pre_lm_manip.inputImage.setQueueSize(1)
         pre_lm_manip.inputImage.setBlocking(False)
-        cam.preview.link(pre_lm_manip.inputImage)
+        # cam.preview.link(pre_lm_manip.inputImage)
+        mono_manip.out.link(pre_lm_manip.inputImage)
 
         # For debugging
         # pre_lm_manip_out = pipeline.createXLinkOut()
         # pre_lm_manip_out.setStreamName("pre_lm_manip_out")
         # pre_lm_manip.out.link(pre_lm_manip_out.input)
-    
+
         manager_script.outputs['pre_lm_manip_cfg'].link(pre_lm_manip.inputConfig)
 
         # Define normalization model between ImageManip and landmark model
         # This is a temporary step. Could be removed when support of setFrameType(RGBF16F16F16p) in ImageManip node
-        print("Creating DiveideBy255 Neural Network...") 
+        print("Creating DiveideBy255 Neural Network...")
         divide_nn = pipeline.create(dai.node.NeuralNetwork)
         divide_nn.setBlobPath(self.divide_by_255_model)
-        pre_lm_manip.out.link(divide_nn.input) 
+        pre_lm_manip.out.link(divide_nn.input)
 
         # Define landmark model
-        print("Creating Landmark Neural Network...") 
+        print("Creating Landmark Neural Network...")
         lm_nn = pipeline.create(dai.node.NeuralNetwork)
         lm_nn.setBlobPath(self.lm_model)
         # lm_nn.setNumInferenceThreads(1)
-  
-        divide_nn.out.link(lm_nn.input)       
+
+        divide_nn.out.link(lm_nn.input)
         lm_nn.out.link(manager_script.inputs['from_lm_nn'])
 
         print("Pipeline created.")
 
-        return pipeline        
+        return pipeline
 
     def build_manager_script(self):
         '''

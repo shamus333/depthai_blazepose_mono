@@ -21,7 +21,7 @@ parser_tracker.add_argument('--no_smoothing', action="store_true",
                     help="Disable smoothing filter")
 parser_tracker.add_argument('-f', '--internal_fps', type=int, 
                     help="Fps of internal color camera. Too high value lower NN fps (default= depends on the model)")                    
-parser_tracker.add_argument('--internal_frame_height', type=int, default=640,                                                                                    
+parser_tracker.add_argument('--internal_frame_height', type=int, default=400,
                     help="Internal color camera frame height in pixels (default=%(default)i)")                    
 parser_tracker.add_argument('-s', '--stats', action="store_true", 
                     help="Print some statistics at exit")
@@ -41,8 +41,6 @@ args = parser.parse_args()
 
 if args.edge:
     from BlazeposeDepthaiEdge import BlazeposeDepthai
-else:
-    from BlazeposeDepthai import BlazeposeDepthai
 tracker = BlazeposeDepthai(input_src=args.input, 
             pd_model=args.pd_m,
             lm_model=args.lm_m,
