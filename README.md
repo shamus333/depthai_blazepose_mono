@@ -5,11 +5,11 @@ Reference from: [depthai_blazepose](https://github.com/geaxgx/depthai_blazepose)
 The purpose of the code is to use the mono camera as the input source of the blazepose algorithm, and the color camera as a virtual camera for other applications.
 
 The source code is from the above link.For academic exchange only
-<p align="center"> <img src="C:\Users\Shamus33\Desktop\效果图.png" alst="Demo"></p>
+<p align="center"> <img src="img/效果图.png" alst="Demo"></p>
 
 
 ## Pipeline
-<p align="center"> <img src="C:\Users\Shamus33\Desktop\pipeline.png" alst="Demo"></p>
+<p align="center"> <img src="img/pipeline.png" alst="Demo"></p>
 
 ## Install
 
